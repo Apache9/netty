@@ -28,8 +28,10 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
 import io.netty.handler.codec.http2.Http2Exception.ClosedStreamCreationException;
 import io.netty.util.ReferenceCountUtil;
+import io.netty.util.ReferenceCounted;
 
 import java.util.ArrayDeque;
+import java.util.Queue;
 
 /**
  * Default implementation of {@link Http2ConnectionEncoder}.
@@ -529,5 +531,11 @@ public class DefaultHttp2ConnectionEncoder implements Http2ConnectionEncoder {
                 error(future.cause());
             }
         }
+    }
+
+    @Override
+    public ChannelFuture writeData(ChannelHandlerContext ctx, int streamId, Queue<ReferenceCounted> data, int length,
+            int padding, boolean endStream, ChannelPromise promise) {
+        throw new UnsupportedOperationException();
     }
 }

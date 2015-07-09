@@ -15,11 +15,13 @@
 package io.netty.handler.codec.http2;
 
 import static io.netty.util.internal.ObjectUtil.checkNotNull;
-
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
+import io.netty.util.ReferenceCounted;
+
+import java.util.Queue;
 
 /**
  * Decorator around another {@link Http2FrameWriter} instance.
@@ -110,5 +112,11 @@ public class DecoratingHttp2FrameWriter implements Http2FrameWriter {
     @Override
     public void close() {
         delegate.close();
+    }
+
+    @Override
+    public ChannelFuture writeData(ChannelHandlerContext ctx, int streamId, Queue<ReferenceCounted> data, int length,
+            int padding, boolean endStream, ChannelPromise promise) {
+        return delegate.writeData(ctx, streamId, data, length, padding, endStream, promise);
     }
 }

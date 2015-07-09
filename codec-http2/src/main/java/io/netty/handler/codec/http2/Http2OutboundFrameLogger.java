@@ -21,6 +21,9 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
+import io.netty.util.ReferenceCounted;
+
+import java.util.Queue;
 
 /**
  * Decorator around a {@link Http2FrameWriter} that logs all outbound frames before calling the
@@ -133,5 +136,12 @@ public class Http2OutboundFrameLogger implements Http2FrameWriter {
     @Override
     public Configuration configuration() {
         return writer.configuration();
+    }
+
+    @Override
+    public ChannelFuture writeData(ChannelHandlerContext ctx, int streamId, Queue<ReferenceCounted> data, int length,
+            int padding, boolean endStream, ChannelPromise promise) {
+        // TODO Auto-generated method stub
+        return null;
     }
 }

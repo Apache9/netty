@@ -18,6 +18,9 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
+import io.netty.util.ReferenceCounted;
+
+import java.util.Queue;
 
 /**
  * Interface that defines an object capable of producing HTTP/2 data frames.
@@ -36,4 +39,22 @@ public interface Http2DataWriter {
      */
     ChannelFuture writeData(ChannelHandlerContext ctx, int streamId,
             ByteBuf data, int padding, boolean endStream, ChannelPromise promise);
+
+    /**
+     * Writes a {@code DATA} frame to the remote endpoint.
+     * <p>
+     * This method is mainly used for merge {@code DATA} frames so should not be called by user code. So an
+     * Http2ConnectionEncoder implementation is not required to implement this method.
+     *
+     * @param ctx the context to use for writing.
+     * @param streamId the stream for which to send the frame.
+     * @param data the payload of the frame. This will be released by this method if successfully written out.
+     * @param length the length of the frame.
+     * @param padding the amount of padding to be added to the end of the frame
+     * @param endStream indicates if this is the last frame to be sent for the stream.
+     * @param promise the promise for the write.
+     * @return the future for the write.
+     */
+    ChannelFuture writeData(ChannelHandlerContext ctx, int streamId, Queue<ReferenceCounted> data, int length,
+            int padding, boolean endStream, ChannelPromise promise);
 }

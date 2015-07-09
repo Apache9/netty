@@ -52,14 +52,18 @@ import static io.netty.handler.codec.http2.Http2FrameTypes.RST_STREAM;
 import static io.netty.handler.codec.http2.Http2FrameTypes.SETTINGS;
 import static io.netty.handler.codec.http2.Http2FrameTypes.WINDOW_UPDATE;
 import static io.netty.util.internal.ObjectUtil.checkNotNull;
-
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
+import io.netty.channel.FileRegion;
+import io.netty.handler.codec.UnsupportedMessageTypeException;
 import io.netty.handler.codec.http2.Http2CodecUtil.SimpleChannelPromiseAggregator;
 import io.netty.handler.codec.http2.Http2FrameWriter.Configuration;
+import io.netty.util.ReferenceCounted;
 import io.netty.util.collection.CharObjectMap;
+
+import java.util.Queue;
 
 /**
  * A {@link Http2FrameWriter} that supports all frame types defined by the HTTP/2 specification.
@@ -544,6 +548,56 @@ public class DefaultHttp2FrameWriter implements Http2FrameWriter, Http2FrameSize
     private static void verifyWindowSizeIncrement(int windowSizeIncrement) {
         if (windowSizeIncrement < 0) {
             throw new IllegalArgumentException("WindowSizeIncrement must be >= 0");
+        }
+    }
+    
+    @Override
+    public ChannelFuture writeData(ChannelHandlerContext ctx, int streamId, Queue<ReferenceCounted> data, int length,
+            int padding, boolean endStream, ChannelPromise promise) {
+        SimpleChannelPromiseAggregator promiseAggregator = new SimpleChannelPromiseAggregator(promise, ctx.channel(),
+                ctx.executor());
+        try {
+            verifyStreamId(streamId, STREAM_ID);
+            verifyPadding(padding);
+
+            Http2Flags flags = new Http2Flags().paddingPresent(padding > 0).endOfStream(endStream);
+
+            int payloadLength = length + padding + flags.getPaddingPresenceFieldLength();
+            verifyPayloadLength(payloadLength);
+
+            ByteBuf buf = ctx.alloc().buffer(DATA_FRAME_HEADER_LENGTH);
+            writeFrameHeaderInternal(buf, payloadLength, DATA, flags, streamId);
+            writePaddingLength(buf, padding);
+            ctx.write(buf, promiseAggregator.newPromise());
+
+            // Write the data.
+            while (length > 0) {
+                ReferenceCounted msg = data.peek();
+                if (msg instanceof ByteBuf) {
+                    ByteBuf byteBuf = (ByteBuf) msg;
+                    int readableBytes = byteBuf.readableBytes();
+                    if (readableBytes > length) {
+                        ctx.write(byteBuf.readSlice(length).retain(), promiseAggregator.newPromise());
+                        length = 0;
+                    } else {
+                        ctx.write(byteBuf, promiseAggregator.newPromise());
+                        length -= readableBytes;
+                        data.remove();
+                    }
+                } else if (msg instanceof FileRegion) {
+                    FileRegion fileRegion = (FileRegion) msg;
+                    // TODO: need to support readSlice in FileRegion
+                } else {
+                    throw new UnsupportedMessageTypeException(msg, ByteBuf.class, FileRegion.class);
+                }
+            }
+
+            if (padding > 0) { // Write the required padding.
+                ctx.write(ZERO_BUFFER.slice(0, padding).retain(), promiseAggregator.newPromise());
+            }
+            return promiseAggregator.doneAllocatingPromises();
+        } catch (Throwable t) {
+            return promiseAggregator.setFailure(t);
         }
     }
 }
