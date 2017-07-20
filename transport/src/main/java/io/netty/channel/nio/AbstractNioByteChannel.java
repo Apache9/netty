@@ -17,6 +17,7 @@ package io.netty.channel.nio;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
+import io.netty.channel.AbstractFileRegion;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelConfig;
 import io.netty.channel.ChannelFuture;
@@ -184,7 +185,7 @@ public abstract class AbstractNioByteChannel extends AbstractNioChannel {
                 if (writeSpinCount == -1) {
                     writeSpinCount = config().getWriteSpinCount();
                 }
-                for (int i = writeSpinCount - 1; i >= 0; i --) {
+                for (int i = writeSpinCount - 1; i >= 0; i--) {
                     int localFlushedAmount = doWriteBytes(buf);
                     if (localFlushedAmount == 0) {
                         setOpWrite = true;
@@ -206,7 +207,42 @@ public abstract class AbstractNioByteChannel extends AbstractNioChannel {
                     // Break the loop and so incompleteWrite(...) is called.
                     break;
                 }
+            } else if (msg instanceof AbstractFileRegion) {
+                AbstractFileRegion region = (AbstractFileRegion) msg;
+                long transferableBytes = region.transferableBytes();
+                if (transferableBytes == 0) {
+                    in.remove();
+                    continue;
+                }
+                boolean done = false;
+                long flushedAmount = 0;
+                if (writeSpinCount == -1) {
+                    writeSpinCount = config().getWriteSpinCount();
+                }
+
+                for (int i = writeSpinCount - 1; i >= 0; i--) {
+                    long localFlushedAmount = doWriteFileRegion(region);
+                    if (localFlushedAmount == 0) {
+                        setOpWrite = true;
+                        break;
+                    }
+
+                    flushedAmount += localFlushedAmount;
+                    if (!region.isTransferable()) {
+                        done = true;
+                        break;
+                    }
+                }
+                in.progress(flushedAmount);
+                if (done) {
+                    in.remove();
+                } else {
+                    // Break the loop and so incompleteWrite(...) is called.
+                    break;
+                }
             } else if (msg instanceof FileRegion) {
+                // TODO: consider remove this branch once we move the methods in AbstractFileRegion
+                // into FileRegion in the next minor release.
                 FileRegion region = (FileRegion) msg;
                 boolean done = region.transferred() >= region.count();
 

@@ -17,6 +17,7 @@ package io.netty.channel.oio;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
+import io.netty.channel.AbstractFileRegion;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelConfig;
 import io.netty.channel.ChannelFuture;
@@ -203,7 +204,15 @@ public abstract class AbstractOioByteChannel extends AbstractOioChannel {
                     readableBytes = newReadableBytes;
                 }
                 in.remove();
+            } else if (msg instanceof AbstractFileRegion) {
+                AbstractFileRegion region = (AbstractFileRegion) msg;
+                long transferIndex = region.transferIndex();
+                doWriteFileRegion(region);
+                in.progress(region.transferIndex() - transferIndex);
+                in.remove();
             } else if (msg instanceof FileRegion) {
+                // TODO: consider remove this branch once we move the methods in AbstractFileRegion
+                // into FileRegion in the next minor release.
                 FileRegion region = (FileRegion) msg;
                 long transferred = region.transferred();
                 doWriteFileRegion(region);
