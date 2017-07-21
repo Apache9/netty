@@ -16,9 +16,12 @@
 package io.netty.handler.codec.http2;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.channel.AbstractFileRegion;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
+import io.netty.channel.FileRegion;
+import io.netty.handler.codec.UnsupportedMessageTypeException;
 import io.netty.handler.codec.http2.Http2CodecUtil.SimpleChannelPromiseAggregator;
 import io.netty.handler.codec.http2.Http2FrameWriter.Configuration;
 import io.netty.handler.codec.http2.Http2HeadersEncoder.SensitivityDetector;
@@ -163,6 +166,65 @@ public class DefaultHttp2FrameWriter implements Http2FrameWriter, Http2FrameSize
 
                 // Write the frame data.
                 ByteBuf frameData = data.readSlice(frameDataBytes);
+                // Only the last frame is not retained. Until then, the outer finally must release.
+                needToReleaseData = !lastFrame;
+                ctx.write(lastFrame ? frameData : frameData.retain(), promiseAggregator.newPromise());
+
+                // Write the frame padding.
+                if (paddingBytes(framePaddingBytes) > 0) {
+                    ctx.write(ZERO_BUFFER.slice(0, paddingBytes(framePaddingBytes)), promiseAggregator.newPromise());
+                }
+            } while (!lastFrame);
+        } catch (Throwable t) {
+            if (needToReleaseHeaders) {
+                header.release();
+            }
+            if (needToReleaseData) {
+                data.release();
+            }
+            promiseAggregator.setFailure(t);
+        }
+        return promiseAggregator.doneAllocatingPromises();
+    }
+
+
+    @Override
+    public ChannelFuture writeData(ChannelHandlerContext ctx, int streamId, FileRegion data,
+            int padding, boolean endStream, ChannelPromise promise) {
+        if (!(data instanceof AbstractFileRegion)) {
+            throw new UnsupportedMessageTypeException(data, AbstractFileRegion.class);
+        }
+        AbstractFileRegion region = (AbstractFileRegion) data;
+        final SimpleChannelPromiseAggregator promiseAggregator =
+                new SimpleChannelPromiseAggregator(promise, ctx.channel(), ctx.executor());
+        final DataFrameHeader header = new DataFrameHeader(ctx, streamId);
+        boolean needToReleaseHeaders = true;
+        boolean needToReleaseData = true;
+        try {
+            verifyStreamId(streamId, STREAM_ID);
+            verifyPadding(padding);
+
+            boolean lastFrame;
+            long remainingData = region.transferableBytes();
+            do {
+                // Determine how much data and padding to write in this frame. Put all padding at the end.
+                int frameDataBytes = (int) min(remainingData, maxFrameSize);
+                int framePaddingBytes = min(padding, max(0, (maxFrameSize - 1) - frameDataBytes));
+
+                // Decrement the remaining counters.
+                padding -= framePaddingBytes;
+                remainingData -= frameDataBytes;
+
+                // Determine whether or not this is the last frame to be sent.
+                lastFrame = remainingData == 0 && padding == 0;
+
+                // Only the last frame is not retained. Until then, the outer finally must release.
+                ByteBuf frameHeader = header.slice(frameDataBytes, framePaddingBytes, lastFrame && endStream);
+                needToReleaseHeaders = !lastFrame;
+                ctx.write(lastFrame ? frameHeader : frameHeader.retain(), promiseAggregator.newPromise());
+
+                // Write the frame data.
+                AbstractFileRegion frameData = region.transferSlice(frameDataBytes);
                 // Only the last frame is not retained. Until then, the outer finally must release.
                 needToReleaseData = !lastFrame;
                 ctx.write(lastFrame ? frameData : frameData.retain(), promiseAggregator.newPromise());
