@@ -27,22 +27,24 @@ import io.netty.channel.DefaultFileRegion;
 import io.netty.channel.FileRegion;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.util.internal.PlatformDependent;
-import org.junit.Test;
 
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.channels.WritableByteChannel;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.junit.Test;
+
 import static org.hamcrest.CoreMatchers.is;
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertThat;
 
 public class SocketFileRegionTest extends AbstractSocketTest {
 
-    static final byte[] data = new byte[1048576 * 10];
+    static final byte[] data = new byte[1048576 * 4];
 
     static {
         PlatformDependent.threadLocalRandom().nextBytes(data);
@@ -147,9 +149,8 @@ public class SocketFileRegionTest extends AbstractSocketTest {
         Channel sc = sb.bind().sync().channel();
 
         Channel cc = cb.connect(sc.localAddress()).sync().channel();
-        FileRegion region = new DefaultFileRegion(
-                new FileInputStream(file).getChannel(), startOffset, data.length - bufferSize);
-        FileRegion emptyRegion = new DefaultFileRegion(new FileInputStream(file).getChannel(), 0, 0);
+        FileRegion region = new DefaultFileRegion(file, startOffset, data.length - bufferSize);
+        FileRegion emptyRegion = new DefaultFileRegion(file, 0, 0);
 
         if (!defaultFileRegion) {
             region = new FileRegionWrapper(region);
@@ -221,7 +222,6 @@ public class SocketFileRegionTest extends AbstractSocketTest {
         public void channelRead0(ChannelHandlerContext ctx, ByteBuf in) throws Exception {
             byte[] actual = new byte[in.readableBytes()];
             in.readBytes(actual);
-
             int lastIdx = counter;
             for (int i = 0; i < actual.length; i ++) {
                 assertEquals(data[i + lastIdx], actual[i]);

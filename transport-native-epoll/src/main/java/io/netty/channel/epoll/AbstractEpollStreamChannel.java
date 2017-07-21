@@ -17,6 +17,7 @@ package io.netty.channel.epoll;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
+import io.netty.channel.AbstractFileRegion;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelConfig;
 import io.netty.channel.ChannelFuture;
@@ -352,33 +353,30 @@ public abstract class AbstractEpollStreamChannel extends AbstractEpollChannel im
     }
 
     /**
-     * Write a {@link DefaultFileRegion}
+     * Write a {@link AbstractFileRegion}
      *
-     * @param region        the {@link DefaultFileRegion} from which the bytes should be written
+     * @param region        the {@link AbstractFileRegion} from which the bytes should be written
      * @return amount       the amount of written bytes
      */
-    private boolean writeDefaultFileRegion(
-            ChannelOutboundBuffer in, DefaultFileRegion region, int writeSpinCount) throws Exception {
-        final long regionCount = region.count();
-        if (region.transferred() >= regionCount) {
+    private boolean writeAbstractFileRegion(
+            ChannelOutboundBuffer in, AbstractFileRegion region, int writeSpinCount) throws Exception {
+        if (!region.isTransferable()) {
             in.remove();
             return true;
         }
 
-        final long baseOffset = region.position();
         boolean done = false;
         long flushedAmount = 0;
 
         for (int i = writeSpinCount; i > 0; --i) {
-            final long offset = region.transferred();
-            final long localFlushedAmount =
-                    Native.sendfile(socket.intValue(), region, baseOffset, offset, regionCount - offset);
+            final long localFlushedAmount = Native.sendfile(socket.intValue(), region,
+                    region.transferableBytes());
             if (localFlushedAmount == 0) {
                 break;
             }
 
             flushedAmount += localFlushedAmount;
-            if (region.transferred() >= regionCount) {
+            if (!region.isTransferable()) {
                 done = true;
                 break;
             }
@@ -474,8 +472,8 @@ public abstract class AbstractEpollStreamChannel extends AbstractEpollChannel im
                 // the network stack can handle more writes.
                 return false;
             }
-        } else if (msg instanceof DefaultFileRegion) {
-            if (!writeDefaultFileRegion(in, (DefaultFileRegion) msg, writeSpinCount)) {
+        } else if (msg instanceof AbstractFileRegion) {
+            if (!writeAbstractFileRegion(in, (AbstractFileRegion) msg, writeSpinCount)) {
                 // was not able to write everything so break here we will get notified later again once
                 // the network stack can handle more writes.
                 return false;
