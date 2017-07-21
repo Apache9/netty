@@ -194,25 +194,22 @@ public abstract class AbstractKQueueStreamChannel extends AbstractKQueueChannel 
      */
     private boolean writeDefaultFileRegion(
             ChannelOutboundBuffer in, DefaultFileRegion region, int writeSpinCount) throws Exception {
-        final long regionCount = region.count();
-        if (region.transferred() >= regionCount) {
+        if (!region.isTransferable()) {
             in.remove();
             return true;
         }
 
-        final long baseOffset = region.position();
         boolean done = false;
         long flushedAmount = 0;
 
         for (int i = writeSpinCount; i > 0; --i) {
-            final long offset = region.transferred();
-            final long localFlushedAmount = socket.sendFile(region, baseOffset, offset, regionCount - offset);
+            final long localFlushedAmount = socket.sendFile(region, region.transferableBytes());
             if (localFlushedAmount == 0) {
                 break;
             }
 
             flushedAmount += localFlushedAmount;
-            if (region.transferred() >= regionCount) {
+            if (!region.isTransferable()) {
                 done = true;
                 break;
             }

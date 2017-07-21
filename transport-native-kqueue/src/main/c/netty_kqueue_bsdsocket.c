@@ -35,19 +35,12 @@
 // Those are initialized in the init(...) method and cached for performance reasons
 static jclass stringCls = NULL;
 static jclass peerCredentialsClass = NULL;
-static jfieldID fileChannelFieldId = NULL;
-static jfieldID transferredFieldId = NULL;
 static jfieldID fdFieldId = NULL;
 static jfieldID fileDescriptorFieldId = NULL;
 static jmethodID peerCredentialsMethodId = NULL;
 
 // JNI Registered Methods Begin
-static jlong netty_kqueue_bsdsocket_sendFile(JNIEnv* env, jclass clazz, jint socketFd, jobject fileRegion, jlong base_off, jlong off, jlong len) {
-    jobject fileChannel = (*env)->GetObjectField(env, fileRegion, fileChannelFieldId);
-    if (fileChannel == NULL) {
-        netty_unix_errors_throwRuntimeException(env, "failed to get DefaultFileRegion.file");
-        return -1;
-    }
+static jlong netty_kqueue_bsdsocket_sendFile(JNIEnv* env, jclass clazz, jint socketFd, jobject fileChanel, jlong base_off, jlong off, jlong len) {
     jobject fileDescriptor = (*env)->GetObjectField(env, fileChannel, fileDescriptorFieldId);
     if (fileDescriptor == NULL) {
         netty_unix_errors_throwRuntimeException(env, "failed to get FileChannelImpl.fd");
@@ -72,10 +65,7 @@ static jlong netty_kqueue_bsdsocket_sendFile(JNIEnv* env, jclass clazz, jint soc
 #endif
       len -= sbytes;
     } while (res < 0 && ((err = errno) == EINTR));
-    sbytes = lenBefore - len;
     if (sbytes > 0) {
-        // update the transferred field in DefaultFileRegion
-        (*env)->SetLongField(env, fileRegion, transferredFieldId, off + sbytes);
         return sbytes;
     }
     return res < 0 ? -err : 0;
@@ -183,7 +173,7 @@ static jint dynamicMethodsTableSize() {
 static JNINativeMethod* createDynamicMethodsTable(const char* packagePrefix) {
     JNINativeMethod* dynamicMethods = malloc(sizeof(JNINativeMethod) * dynamicMethodsTableSize());
     memcpy(dynamicMethods, fixed_method_table, sizeof(fixed_method_table));
-    char* dynamicTypeName = netty_unix_util_prepend(packagePrefix, "io/netty/channel/DefaultFileRegion;JJJ)J");
+    char* dynamicTypeName = netty_unix_util_prepend(packagePrefix, "java/nio/channels/FileChannel;JJJ)J");
     JNINativeMethod* dynamicMethod = &dynamicMethods[fixed_method_table_size];
     dynamicMethod->name = "sendFile";
     dynamicMethod->signature = netty_unix_util_prepend("(IL", dynamicTypeName);
@@ -225,24 +215,6 @@ jint netty_kqueue_bsdsocket_JNI_OnLoad(JNIEnv* env, const char* packagePrefix) {
     dynamicMethods = NULL;
 
     // Initialize this module
-    char* nettyClassName = netty_unix_util_prepend(packagePrefix, "io/netty/channel/DefaultFileRegion");
-    jclass fileRegionCls = (*env)->FindClass(env, nettyClassName);
-    free(nettyClassName);
-    nettyClassName = NULL;
-    if (fileRegionCls == NULL) {
-        return JNI_ERR;
-    }
-    fileChannelFieldId = (*env)->GetFieldID(env, fileRegionCls, "file", "Ljava/nio/channels/FileChannel;");
-    if (fileChannelFieldId == NULL) {
-        netty_unix_errors_throwRuntimeException(env, "failed to get field ID: DefaultFileRegion.file");
-        return JNI_ERR;
-    }
-    transferredFieldId = (*env)->GetFieldID(env, fileRegionCls, "transferred", "J");
-    if (transferredFieldId == NULL) {
-        netty_unix_errors_throwRuntimeException(env, "failed to get field ID: DefaultFileRegion.transferred");
-        return JNI_ERR;
-    }
-
     jclass fileChannelCls = (*env)->FindClass(env, "sun/nio/ch/FileChannelImpl");
     if (fileChannelCls == NULL) {
         // pending exception...
@@ -270,7 +242,7 @@ jint netty_kqueue_bsdsocket_JNI_OnLoad(JNIEnv* env, const char* packagePrefix) {
         return JNI_ERR;
     }
 
-    nettyClassName = netty_unix_util_prepend(packagePrefix, "io/netty/channel/unix/PeerCredentials");
+    char* nettyClassName = netty_unix_util_prepend(packagePrefix, "io/netty/channel/unix/PeerCredentials");
     jclass localPeerCredsClass = (*env)->FindClass(env, nettyClassName);
     free(nettyClassName);
     nettyClassName = NULL;

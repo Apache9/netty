@@ -15,7 +15,7 @@
  */
 package io.netty.channel.kqueue;
 
-import io.netty.channel.DefaultFileRegion;
+import io.netty.channel.AbstractFileRegion;
 import io.netty.channel.unix.Errors;
 import io.netty.channel.unix.PeerCredentials;
 import io.netty.channel.unix.Socket;
@@ -23,6 +23,7 @@ import io.netty.util.internal.ThrowableUtil;
 
 import java.io.IOException;
 import java.nio.channels.ClosedChannelException;
+import java.nio.channels.FileChannel;
 
 import static io.netty.channel.kqueue.AcceptFilter.PLATFORM_UNSUPPORTED;
 import static io.netty.channel.unix.Errors.ERRNO_EPIPE_NEGATIVE;
@@ -81,13 +82,10 @@ final class BsdSocket extends Socket {
         return getPeerCredentials(intValue());
     }
 
-    long sendFile(DefaultFileRegion src, long baseOffset, long offset, long length) throws IOException {
-        // Open the file-region as it may be created via the lazy constructor. This is needed as we directly access
-        // the FileChannel field directly via JNI
-        src.open();
-
-        long res = sendFile(intValue(), src, baseOffset, offset, length);
+    long sendFile(AbstractFileRegion src, long length) throws IOException {
+        long res = sendFile(intValue(), src.channel(), src.position(), src.transferIndex(), length);
         if (res >= 0) {
+            src.transferIndex(src.transferIndex() + res);
             return res;
         }
         return ioResult("sendfile", (int) res, SENDFILE_CONNECTION_RESET_EXCEPTION, SENDFILE_CLOSED_CHANNEL_EXCEPTION);
@@ -105,7 +103,7 @@ final class BsdSocket extends Socket {
         return new BsdSocket(newSocketDomain0());
     }
 
-    private static native long sendFile(int socketFd, DefaultFileRegion src, long baseOffset,
+    private static native long sendFile(int socketFd, FileChannel src, long baseOffset,
                                         long offset, long length) throws IOException;
 
     private static native String[] getAcceptFilter(int fd) throws IOException;
