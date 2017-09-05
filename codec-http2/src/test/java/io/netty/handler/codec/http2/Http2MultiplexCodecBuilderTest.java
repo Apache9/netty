@@ -82,7 +82,13 @@ public class Http2MultiplexCodecBuilderTest {
         Bootstrap cb = new Bootstrap()
                 .channel(LocalChannel.class)
                 .group(group)
-                .handler(new Http2MultiplexCodecBuilder(false, new TestChannelInitializer()).build());
+                .handler(new Http2MultiplexCodecBuilder(false, new ChannelInitializer<Channel>() {
+
+                    @Override
+                    protected void initChannel(Channel ch) throws Exception {
+                        throw new RuntimeException("should not be call for outbound stream");
+                    }
+                }).build());
         clientChannel = cb.connect(serverAddress).sync().channel();
         assertTrue(serverChannelLatch.await(5, SECONDS));
     }
